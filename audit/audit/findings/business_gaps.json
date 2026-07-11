@@ -1,0 +1,62 @@
+[
+  {
+    "id": "BL-01",
+    "severity": "High",
+    "title": "Distribución, vesting y LP lock no se fuerzan on-chain",
+    "scope": "Token/Despliegue"
+  },
+  {
+    "id": "BL-02",
+    "severity": "High",
+    "title": "Comisión del 5% por transacción ausente",
+    "scope": "No existe"
+  },
+  {
+    "id": "BL-03",
+    "severity": "Medium",
+    "title": "Pago de clases personalizadas ausente",
+    "scope": "No existe"
+  },
+  {
+    "id": "BL-04",
+    "severity": "Medium",
+    "title": "Membresía avanzada incompleta",
+    "scope": "MembershipSystem.sol"
+  },
+  {
+    "id": "BL-05",
+    "severity": "Medium",
+    "title": "Cancelación/reembolso académico ausente y contradictorio",
+    "scope": "MembershipSystem.sol"
+  },
+  {
+    "id": "BL-06",
+    "severity": "Medium",
+    "title": "Financiación OSS no valida roles, repo ni talentos",
+    "scope": "TalentBonuses.sol"
+  },
+  {
+    "id": "BL-07",
+    "severity": "Medium",
+    "title": "Flujos de suplantación y plagio no coinciden con documentación",
+    "scope": "PenaltySystem.sol"
+  },
+  {
+    "id": "BL-08",
+    "severity": "Medium",
+    "title": "Hechos off-chain sin attestations ni nonces",
+    "scope": "Múltiples"
+  },
+  {
+    "id": "BL-09",
+    "severity": "Informational",
+    "title": "DAO documentada pero no incluida",
+    "scope": "Fuera de alcance"
+  },
+  {
+    "id": "BL-10",
+    "severity": "Medium",
+    "title": "Contradicciones documentales y exposición regulatoria",
+    "scope": "Documentación"
+  }
+]

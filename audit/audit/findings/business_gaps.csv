@@ -1,0 +1,11 @@
+ID,Severity,Title,Scope
+BL-01,High,"Distribución, vesting y LP lock no se fuerzan on-chain",Token/Despliegue
+BL-02,High,Comisión del 5% por transacción ausente,No existe
+BL-03,Medium,Pago de clases personalizadas ausente,No existe
+BL-04,Medium,Membresía avanzada incompleta,MembershipSystem.sol
+BL-05,Medium,Cancelación/reembolso académico ausente y contradictorio,MembershipSystem.sol
+BL-06,Medium,"Financiación OSS no valida roles, repo ni talentos",TalentBonuses.sol
+BL-07,Medium,Flujos de suplantación y plagio no coinciden con documentación,PenaltySystem.sol
+BL-08,Medium,Hechos off-chain sin attestations ni nonces,Múltiples
+BL-09,Informational,DAO documentada pero no incluida,Fuera de alcance
+BL-10,Medium,Contradicciones documentales y exposición regulatoria,Documentación

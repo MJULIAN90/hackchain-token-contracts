@@ -1,0 +1,5 @@
+Repository type: Foundry-only
+Validated Forge version: 1.7.1
+Solidity version: 0.8.24
+EVM target: Cancun
+OpenZeppelin Contracts: 5.0.2 (vendored)

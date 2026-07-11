@@ -1,0 +1,37 @@
+{
+  "project": "HackChain Smart Contract Audit - Foundry Repository",
+  "repository_type": "Foundry-only",
+  "auditor": {
+    "name": "Julian Ruiz",
+    "role": "Blockchain Engineer - Smart Contract Security Reviewer",
+    "linkedin": "https://www.linkedin.com/in/julian-ruiz-v/"
+  },
+  "toolchain": {
+    "forge_validated": "1.7.1",
+    "solidity": "0.8.24",
+    "evm_version": "cancun",
+    "openzeppelin_contracts": "5.0.2"
+  },
+  "source_contracts": 11,
+  "foundry_tests": 17,
+  "test_result": "17 passed, 0 failed, 0 skipped",
+  "findings_by_severity": {
+    "High": 5,
+    "Medium": 6,
+    "Low": 6,
+    "Informational": 7
+  },
+  "reports": [
+    "audit/reports/INFORME_AUDITORIA_HACKCHAIN_ES.pdf",
+    "audit/reports/HACKCHAIN_SMART_CONTRACT_AUDIT_EN.pdf"
+  ],
+  "excluded_tooling": [
+    "npm",
+    "Node.js",
+    "Mocha",
+    "Ganache",
+    "Hardhat",
+    "JavaScript solc wrapper"
+  ],
+  "notes": "Audited source is preserved byte-for-byte. Tests reproduce findings and business-logic behavior; they do not remediate the contracts."
+}

@@ -1,0 +1,525 @@
+[
+  {
+    "id": "H-01",
+    "severity": "High",
+    "title": "La recompensa de referidos puede cobrarse inmediatamente y permite drenaje mediante identidades Sybil",
+    "contracts": [
+      "ReferralSystem.sol",
+      "StakingContract.sol"
+    ],
+    "lines": [
+      "ReferralSystem.sol:93-149",
+      "StakingContract.sol:105-130",
+      "StakingContract.sol:221-222"
+    ],
+    "description": "`validateReferral()` solo consulta el total actualmente depositado mediante `getTotalStaked()`. No verifica que el stake tenga duración de un mes, que haya permanecido bloqueado durante un mes, que el referido haya sido registrado antes de hacer stake ni que referrer y referred correspondan a identidades distintas. Un usuario puede controlar ambas wallets, depositar 1.000 HACK y validar de inmediato.",
+    "impact": "Un atacante puede crear pares de wallets, obtener 1.000 HACK por cada referido inmediatamente y repetir el proceso con múltiples referrers para eludir el límite mensual por dirección. El capital queda bloqueado temporalmente, pero la recompensa se recibe en el acto y el pool puede drenarse económicamente.",
+    "scenario": "El atacante controla A (referrer) y B (referred). B deposita 1.000 HACK por 30 días, registra A y llama `validateReferral()` en el mismo bloque. A recibe 1.000 HACK antes de que transcurra el periodo exigido. El límite de cinco se evita creando A2, A3, etc.",
+    "recommendation": "Registrar el ID del stake elegible y exigir `duration == ONE_MONTH` o superior y `block.timestamp >= startTime + ONE_MONTH`; impedir registrar el referido después del evento de elegibilidad; integrar identidad/KYC o una autorización firmada del backend; aplicar límites por identidad, no solo por wallet; y añadir un `referralId` único e idempotente.",
+    "evidence": [
+      "Mocha HC-H01",
+      "Foundry test_ReferralRewardCanBeClaimedImmediatelyAfterStake"
+    ]
+  },
+  {
+    "id": "H-02",
+    "severity": "High",
+    "title": "La retirada del principal depende del pago de la recompensa y puede quedar bloqueada",
+    "contracts": [
+      "StakingContract.sol",
+      "IncentivesPool.sol"
+    ],
+    "lines": [
+      "StakingContract.sol:141-175",
+      "IncentivesPool.sol:94-110"
+    ],
+    "description": "`unstake()` devuelve el principal y, en la misma transacción, llama a `IncentivesPool.distribute()`. Si el pool no tiene balance contable, no tiene balance real, revocó el rol, fue configurado incorrectamente o está pausado el token, toda la transacción revierte, incluida la devolución del principal.",
+    "impact": "Los usuarios pueden quedar imposibilitados de recuperar sus propios tokens aun después de cumplir el bloqueo. El problema puede afectar a todos los stakers simultáneamente por falta de liquidez o un error de configuración.",
+    "scenario": "El usuario deposita 1.000 HACK. Después de 30 días intenta retirar. El pool está vacío y `distribute()` revierte con `InsufficientPoolBalance`; la transferencia del principal y el cambio de estado también se revierten.",
+    "recommendation": "Separar el principal de la recompensa. La retirada debe devolver siempre el principal y registrar la recompensa como deuda reclamable (`pendingRewards`) si el pool no puede pagar. Añadir `emergencyWithdrawPrincipal()`, monitoreo de solvencia y pruebas de revocación de roles, pausa y cambio de pool.",
+    "evidence": [
+      "Mocha HC-H02",
+      "Foundry test_EmptyRewardPoolBlocksPrincipalWithdrawal"
+    ]
+  },
+  {
+    "id": "H-03",
+    "severity": "High",
+    "title": "Las vistas académicas pueden inflarse sin límite para apropiarse del pool de educadores",
+    "contracts": [
+      "MembershipSystem.sol"
+    ],
+    "lines": [
+      "MembershipSystem.sol:249-280",
+      "MembershipSystem.sol:288-327"
+    ],
+    "description": "Cualquier miembro académico activo puede llamar `registerContentView()` un número ilimitado de veces, para el mismo educador, contenido y bloque. Un educador también puede adquirir membresía y registrar vistas de su propio contenido. No existe `contentId`, `viewId`, límite por usuario, firma del backend ni protección contra auto-vistas.",
+    "impact": "Un educador puede fabricar la mayoría o totalidad de las vistas y reclamar la porción acumulada de tarifas aportadas por otros miembros. Esto permite extraer el `pendingEducatorPool` sin consumo real de contenido.",
+    "scenario": "Un educador con `EDUCATOR_ROLE` compra una membresía mensual, ejecuta `registerContentView(educator)` repetidamente y llama `claimEducatorRewards()`. Al representar el 100% de las vistas, recibe el 100% del pool de educadores.",
+    "recommendation": "Las vistas remunerables deben entrar mediante un rol de registrador/oráculo o firmas EIP-712, con un `viewId` único. Prohibir auto-vistas, limitar una vista remunerable por usuario/contenido/periodo, definir ciclos cerrados y usar snapshots del total de vistas y fondos antes de permitir reclamaciones.",
+    "evidence": [
+      "Mocha HC-H04",
+      "Foundry test_EducatorCanSelfGenerateViewsAndDrainEducatorPool"
+    ]
+  },
+  {
+    "id": "H-04",
+    "severity": "High",
+    "title": "Las penalizaciones son voluntarias porque dependen de la aprobación del infractor",
+    "contracts": [
+      "PenaltySystem.sol",
+      "HackTokenERC20.sol"
+    ],
+    "lines": [
+      "PenaltySystem.sol:128-290",
+      "PenaltySystem.sol:345-383",
+      "HackTokenERC20.sol:76-80"
+    ],
+    "description": "Todas las penalizaciones usan `hackToken.transferFrom(user_, ...)`. El usuario sancionado debe haber otorgado y conservado allowance al contrato. Si no existe allowance o se revoca antes de la ejecución, la penalización revierte. El bloqueo del perfil se actualiza después de la transferencia, por lo que también se revierte.",
+    "impact": "Un infractor puede evitar tanto el pago como el bloqueo simplemente no aprobando el contrato. Esto invalida los mecanismos 7, 9, 14, 25, 26 y 30 como controles coercitivos on-chain.",
+    "scenario": "El enforcer intenta aplicar una penalización por inactividad a una wallet con saldo, pero sin allowance. `transferFrom()` revierte y `profileBlocked` permanece `false`.",
+    "recommendation": "Definir explícitamente el modelo de custodia. Opciones: usar saldo previamente escrowed; integrar la sanción en el token mediante una función limitada y auditable que use `BURNER_ROLE`; congelar perfil/saldo primero y registrar deuda pagable; o exigir depósitos colaterales. No depender de una aprobación voluntaria del infractor.",
+    "evidence": [
+      "Mocha HC-H05",
+      "Foundry test_PenaltyCanBeAvoidedByWithholdingAllowance",
+      "Slither arbitrary-send-erc20 (señal contextual)"
+    ]
+  },
+  {
+    "id": "H-05",
+    "severity": "High",
+    "title": "La base de penalización usa saldo movible y la venta masiva se evalúa contra el balance posterior",
+    "contracts": [
+      "PenaltySystem.sol",
+      "StakingContract.sol"
+    ],
+    "lines": [
+      "PenaltySystem.sol:128-219",
+      "PenaltySystem.sol:152-177",
+      "StakingContract.sol:105-175"
+    ],
+    "description": "Las penalizaciones porcentuales leen balanceOf(user) al ejecutar. El usuario puede mover o stakear tokens antes de la sanción. La venta masiva compara los umbrales contra el balance posterior y recibe circulatingSupply del enforcer.",
+    "impact": "El usuario puede reducir la base a cero o quedar debajo del umbral del 1% después de vender, evitando una sanción que habría aplicado con el snapshot previo.",
+    "scenario": "Stakear todo el saldo antes de aplicar la penalización produce amount cero. Tras una venta masiva, el balance posterior puede ser inferior al 1% y la función revierte.",
+    "recommendation": "Usar snapshots/attestations del balance previo, monto, supply, bloque y tx hash; registrar una deuda por caseId o cobrar en el settlement de venta.",
+    "evidence": [
+      "Mocha BL-P02",
+      "Mocha BL-P03"
+    ]
+  },
+  {
+    "id": "M-01",
+    "severity": "Medium",
+    "title": "`deposit()` incrementa la contabilidad del pool sin comprobar una transferencia real",
+    "contracts": [
+      "IncentivesPool.sol"
+    ],
+    "lines": [
+      "IncentivesPool.sol:121-130"
+    ],
+    "description": "Un actor con `DEPOSITOR_ROLE` puede llamar `deposit(amount, reason)` sin transferir tokens. La función incrementa `poolBalance` y `totalReceived` de forma ciega y no compara el balance real antes/después.",
+    "impact": "La contabilidad puede quedar por encima del saldo real. Las distribuciones posteriores revierten al agotar el saldo físico, se emiten métricas falsas y se pierde la garantía de solvencia del pool.",
+    "scenario": "Un depositor autorizado llama `deposit(1_000 ether, ...)` con balance real cero. `poolBalance` pasa a 1.000 HACK mientras `actualBalance()` sigue en cero.",
+    "recommendation": "Hacer que `deposit()` ejecute `safeTransferFrom()` dentro de la misma función o calcular el delta de balance. Como mínimo, exigir `actualBalance >= poolBalance + amount`. Usar `SafeERC20` y añadir una función controlada para sincronizar donaciones directas.",
+    "evidence": [
+      "Mocha HC-M01",
+      "Foundry fuzz 256 runs",
+      "Halmos counterexample",
+      "Slither/Forge lint complementarios"
+    ]
+  },
+  {
+    "id": "M-02",
+    "severity": "Medium",
+    "title": "La exención de comisión se activa inmediatamente y puede permanecer con elegibilidad obsoleta",
+    "contracts": [
+      "StakingContract.sol"
+    ],
+    "lines": [
+      "StakingContract.sol:184-190",
+      "StakingContract.sol:231-242"
+    ],
+    "description": "La exención se habilita por declarar una posición anual sin esperar doce meses. Además, el estado persistente puede continuar después de retirar el stake anual si otras posiciones conservan el agregado requerido.",
+    "impact": "Se reducen ingresos de plataforma y usuarios sin una posición anual madura pueden conservar el beneficio.",
+    "scenario": "El usuario activa inmediatamente; o combina una posición anual con una mensual, retira la anual y conserva la exención.",
+    "recommendation": "Derivar la elegibilidad de una posición concreta, activa, con amount >= 100.000 HACK y startTime + 365 days cumplido; evitar booleanos obsoletos.",
+    "evidence": [
+      "Mocha HC-H03",
+      "Foundry test_NoCommissionCanBeActivatedImmediately",
+      "Mocha BL-P04"
+    ]
+  },
+  {
+    "id": "M-03",
+    "severity": "Medium",
+    "title": "El ganador de reputación pierde una ventana de reclamación todavía vigente al cambiar de época",
+    "contracts": [
+      "ReputationBunises.sol"
+    ],
+    "lines": [
+      "ReputationBunises.sol:90-148"
+    ],
+    "description": "`registerWinner()` guarda el bono bajo el mes de registro, pero `claimBonus()` siempre busca el mes calculado en el momento de reclamar. Si el ganador se registra cerca del final de una época de 30 días y reclama después del cambio, la función consulta una entrada vacía aunque no hayan transcurrido los tres días.",
+    "impact": "Ganadores válidos pueden perder el bono por una condición de calendario. El frontend no puede corregirlo porque la función no acepta el mes del bono.",
+    "scenario": "El ganador se registra un día antes del final de la época. Dos días después intenta reclamar: está dentro de `CLAIM_WINDOW`, pero `currentMonth` ya cambió y revierte con `NoBonusForThisMonth`.",
+    "recommendation": "Aceptar `month_`/`bonusId` en `claimBonus()`, o mantener un `claimableBonusByWinner` que apunte al bono pendiente. Validar la ventana contra `registeredAt`, no contra el mes actual.",
+    "evidence": [
+      "Mocha HC-M02",
+      "Foundry test_ReputationClaimBreaksAcrossEpochBoundaryWhileWindowOpen"
+    ]
+  },
+  {
+    "id": "M-04",
+    "severity": "Medium",
+    "title": "Varios eventos off-chain carecen de identificadores únicos e idempotencia",
+    "contracts": [
+      "EventRewards.sol",
+      "EducatorBonuses.sol",
+      "RecruiterBonuses.sol"
+    ],
+    "lines": [
+      "EventRewards.sol:148-166",
+      "EventRewards.sol:239-257",
+      "EducatorBonuses.sol:260-276",
+      "RecruiterBonuses.sol:169-187"
+    ],
+    "description": "Las funciones que registran asistencias, eventos, contrataciones y bonos de contratación solo incrementan contadores o pagan. No reciben un `eventId`/`hiringId` consumible. Un reintento del backend, un mensaje duplicado o un enforcer comprometido puede contabilizar el mismo hecho varias veces.",
+    "impact": "Se pueden alcanzar umbrales con eventos duplicados o pagar repetidamente el mismo hiring, generando inflación y pérdida de fondos del pool. Aunque el enforcer es privilegiado, la idempotencia es necesaria para resistir errores operativos y replays.",
+    "scenario": "`rewardTalentHired(educator, talent)` se ejecuta dos veces para la misma contratación y paga dos bonos. La PoC demuestra que no existe bloqueo.",
+    "recommendation": "Añadir IDs canónicos (`bytes32`) por evento/contratación/certificación, almacenar `processed[id]` y rechazar replays. Definir cómo se construye y firma cada ID; usar colas idempotentes y multisig/timelock para pagos excepcionales.",
+    "evidence": [
+      "Mocha HC-M04",
+      "Revisión manual cruzada"
+    ]
+  },
+  {
+    "id": "M-05",
+    "severity": "Medium",
+    "title": "Transferir `Ownable` no transfiere la administración de `AccessControl`",
+    "contracts": [
+      "HackTokenERC20.sol"
+    ],
+    "lines": [
+      "HackTokenERC20.sol:39-43",
+      "HackTokenERC20.sol:87-92"
+    ],
+    "description": "El token combina `Ownable` y `AccessControl`. `transferOwnershipCustom()` solo cambia `owner()`. El deployer conserva `DEFAULT_ADMIN_ROLE`, `MINTER_ROLE`, `BURNER_ROLE` y `PAUSER_ROLE`; el nuevo owner no recibe ninguno automáticamente.",
+    "impact": "Una migración de control puede parecer completada cuando el antiguo operador todavía puede mintear, quemar, pausar y administrar roles. El nuevo owner puede no tener capacidad operativa real.",
+    "scenario": "Tras transferir ownership, el nuevo owner intenta conceder `MINTER_ROLE` y revierte; el deployer anterior todavía puede hacerlo.",
+    "recommendation": "Usar un único modelo de autoridad o implementar una migración atómica/two-step de roles. Preferir `AccessControlDefaultAdminRules` con retraso, multisig y renuncia explícita del administrador anterior. Documentar que ownership no controla los roles si se conserva ambos modelos.",
+    "evidence": [
+      "Mocha HC-L01",
+      "Revisión manual"
+    ]
+  },
+  {
+    "id": "M-06",
+    "severity": "Medium",
+    "title": "Los bonos de recruiter no verifican actividad real ni consistencia de registro/KYC",
+    "contracts": [
+      "RecruiterBonuses.sol"
+    ],
+    "lines": [
+      "RecruiterBonuses.sol:116-159",
+      "RecruiterBonuses.sol:169-220",
+      "RecruiterBonuses.sol:231-261"
+    ],
+    "description": "El bono de “7 active days” solo comprueba tiempo transcurrido desde el registro; no registra actividad. Las contrataciones se pueden registrar para direcciones no registradas y el bono KYC puede reclamarse sin exigir `isRegistered`. `verifyKyc()` también puede repetirse hasta que el bono sea reclamado.",
+    "impact": "La implementación no garantiza las condiciones descritas y depende completamente de disciplina off-chain. Errores del enforcer pueden pagar wallets no elegibles o sin actividad.",
+    "scenario": "Una wallet es registrada, no realiza ninguna acción y reclama 50.000 HACK al séptimo día. Otra wallet puede ser marcada KYC y cobrar sin haberse registrado como recruiter.",
+    "recommendation": "Definir actividad verificable (`lastActiveAt`, días únicos o attestations), exigir registro/KYC en los flujos correspondientes e incorporar IDs de contratación. Si todo es off-chain, consolidar la verificación en una autorización firmada con nonce y fecha de expiración.",
+    "evidence": [
+      "Revisión manual de reglas de negocio"
+    ]
+  },
+  {
+    "id": "L-01",
+    "severity": "Low",
+    "title": "Se ignoran valores de retorno de transferencias ERC20 en membresías y penalizaciones",
+    "contracts": [
+      "MembershipSystem.sol",
+      "PenaltySystem.sol"
+    ],
+    "lines": [
+      "MembershipSystem.sol:159-164",
+      "MembershipSystem.sol:195-199",
+      "MembershipSystem.sol:224-226",
+      "MembershipSystem.sol:266",
+      "PenaltySystem.sol:250-253",
+      "PenaltySystem.sol:358-364"
+    ],
+    "description": "Varias llamadas `transfer()` no comprueban el booleano devuelto. Con el `HackToken` incluido, OpenZeppelin devuelve `true` o revierte, por lo que el riesgo es latente; sin embargo, los constructores aceptan cualquier dirección ERC20 y el código pretende ser genérico.",
+    "impact": "Con un token no estándar o una dirección incorrecta, el sistema puede continuar, modificar estado o notificar depósitos aunque la transferencia haya devuelto `false`.",
+    "scenario": "Un token de prueba devuelve `false` al transferir al treasury; la membresía puede registrarse porque no se verifica el resultado.",
+    "recommendation": "Usar `SafeERC20.safeTransfer` y `safeTransferFrom` en todos los contratos. Validar `code.length` en constructores y fijar/verificar la dirección exacta del token en despliegue.",
+    "evidence": [
+      "Slither unchecked-transfer (10 señales)",
+      "Forge lint erc20-unchecked-transfer"
+    ]
+  },
+  {
+    "id": "L-02",
+    "severity": "Low",
+    "title": "La validación de índice de stake ocurre después de acceder al array",
+    "contracts": [
+      "StakingContract.sol"
+    ],
+    "lines": [
+      "StakingContract.sol:141-146"
+    ],
+    "description": "`Stake storage userStake = userStakes[msg.sender][stakeIndex_]` se ejecuta antes de comprobar `stakeIndex_ >= length`. Un índice inválido produce un panic de array y hace inalcanzable el error `StakeNotFound`.",
+    "impact": "No se pierden fondos, pero se rompe la semántica de errores, complica integraciones y evidencia un orden incorrecto de validación.",
+    "scenario": "Llamar `unstake(0)` sin posiciones revierte por panic y no por `StakeNotFound`.",
+    "recommendation": "Mover la comprobación de longitud antes de obtener la referencia storage.",
+    "evidence": [
+      "Mocha HC-L02"
+    ]
+  },
+  {
+    "id": "L-03",
+    "severity": "Low",
+    "title": "El estado de membresía avanzada permanece activo tras expirar y permite penalizar cancelaciones vencidas",
+    "contracts": [
+      "MembershipSystem.sol"
+    ],
+    "lines": [
+      "MembershipSystem.sol:143-145",
+      "MembershipSystem.sol:182-204",
+      "MembershipSystem.sol:211-238"
+    ],
+    "description": "`active` no se actualiza automáticamente al expirar. `activateAdvancedMembership()` rechaza al usuario porque `active == true`, mientras `cancelAdvancedMembership()` acepta la membresía expirada y cobra una penalización. La única ruta razonable es `renewAdvancedMembership()`.",
+    "impact": "La interfaz puede ofrecer acciones inconsistentes y cobrar 1.000 HACK por cancelar algo que ya terminó.",
+    "scenario": "Después de 30 días, `hasAdvancedMembership()` devuelve false, pero `cancelAdvancedMembership()` todavía cobra la penalización porque solo consulta `active`.",
+    "recommendation": "Usar una única fuente de verdad (`expiresAt > block.timestamp`), permitir reactivación si expiró y exigir `expiresAt > block.timestamp` para penalizar una cancelación temprana.",
+    "evidence": [
+      "Revisión manual"
+    ]
+  },
+  {
+    "id": "L-04",
+    "severity": "Low",
+    "title": "Bucles y lotes no acotados pueden exceder el límite de gas",
+    "contracts": [
+      "StakingContract.sol",
+      "TalentBonuses.sol"
+    ],
+    "lines": [
+      "StakingContract.sol:231-242",
+      "TalentBonuses.sol:192-220"
+    ],
+    "description": "La elegibilidad sin comisión recorre todas las posiciones del usuario y la distribución de proyectos hace múltiples transferencias en un loop de longitud arbitraria.",
+    "impact": "Usuarios con muchas posiciones pueden auto-bloquear la activación por gas; lotes grandes de distribución pueden ser imposibles de ejecutar.",
+    "scenario": "Una lista de cientos/miles de talentos hace que el lote de transferencias exceda el gas del bloque.",
+    "recommendation": "Mantener agregados/indexes de stakes elegibles y limitar el tamaño de batch. Permitir distribución por páginas o modelo pull-payment.",
+    "evidence": [
+      "Slither calls-loop",
+      "Revisión manual"
+    ]
+  },
+  {
+    "id": "L-05",
+    "severity": "Low",
+    "title": "El patrocinador de un proyecto puede sobrescribirse y no existe ruta de reembolso",
+    "contracts": [
+      "TalentBonuses.sol"
+    ],
+    "lines": [
+      "TalentBonuses.sol:167-220"
+    ],
+    "description": "Cualquier dirección puede financiar el mismo `projectId`; `projectSponsor[projectId]` se sobrescribe con el último financiador mientras los montos se acumulan. No se valida `projectId != 0`, no se restringe el rol del sponsor y no existe cancelación/reembolso si el enforcer no distribuye.",
+    "impact": "Se pierde atribución, los fondos pueden permanecer bloqueados indefinidamente y la implementación no respeta la descripción “Educator or Recruiter”.",
+    "scenario": "Sponsor A aporta 1.000 y Sponsor B aporta otros 1.000 al mismo ID. El getter reporta únicamente B como sponsor, aunque conserva ambos fondos.",
+    "recommendation": "Modelar aportes por sponsor, impedir sobrescritura o soportar múltiples sponsors explícitamente; validar ID y rol; añadir deadline, cierre y reembolso de saldo no distribuido.",
+    "evidence": [
+      "Revisión manual"
+    ]
+  },
+  {
+    "id": "L-06",
+    "severity": "Low",
+    "title": "La pausa de emergencia no es granular y puede bloquear retiros",
+    "contracts": [
+      "HackTokenERC20.sol",
+      "StakingContract.sol",
+      "MembershipSystem.sol",
+      "IncentivesPool.sol"
+    ],
+    "lines": [
+      "HackTokenERC20.sol:99-114",
+      "StakingContract.sol:105-175",
+      "MembershipSystem.sol:112-238",
+      "IncentivesPool.sol:75-110"
+    ],
+    "description": "HackToken aplica una pausa global a toda operación ERC-20 mediante `_update()`, pero los módulos que reciben fondos no tienen una pausa de entradas independiente. Pausar el token evita nuevos depósitos y también impide devolver el principal desde staking.",
+    "impact": "La respuesta a incidentes obliga a escoger entre dejar módulos vulnerables activos o congelar también salidas legítimas. Esto puede agravar el bloqueo de principal descrito en H-02.",
+    "scenario": "El PAUSER_ROLE pausa HackToken durante un incidente. Un usuario con stake vencido llama `unstake()`. La transferencia ERC-20 de principal revierte por la pausa global, aunque se pretendía únicamente evitar nuevos depósitos.",
+    "recommendation": "Añadir Pausable por módulo/flujo: `whenNotPaused` en stake, activaciones, renovaciones, financiaciones y depósitos; mantener retiros de principal y cancelaciones seguras disponibles. Operar EMERGENCY_ROLE mediante multisig, eventos y runbook.",
+    "evidence": [
+      "Revisión manual de flujo de pausa",
+      "Prueba de aceptación propuesta: depósitos pausados y retiros habilitados"
+    ]
+  },
+  {
+    "id": "I-01",
+    "severity": "Informational",
+    "title": "“Mes” se implementa como épocas globales de 30 días y puede borrar calificaciones al cambio",
+    "contracts": [
+      "ReferralSystem.sol",
+      "EventRewards.sol",
+      "RecruiterBonuses.sol",
+      "TalentBonuses.sol",
+      "ReputationBunises.sol"
+    ],
+    "lines": [
+      "Múltiples usos de block.timestamp / 30 days"
+    ],
+    "description": "Las épocas no corresponden a meses calendario y los contadores se reinician al primer llamado en una época nueva. En EventRewards y RecruiterBonuses no existe periodo de gracia para reclamar logros del periodo anterior.",
+    "impact": "La experiencia puede divergir de la política de negocio y usuarios que alcanzaron un umbral al final del periodo pueden perderlo al cambiar la época.",
+    "scenario": "Un recruiter llega a cuatro contrataciones al final de la época, no reclama antes del límite y la primera llamada posterior reinicia el contador.",
+    "recommendation": "Definir explícitamente periodos, IDs de ciclo y ventanas de reclamación. Mantener históricos por `cycleId` en vez de sobrescribir un único struct.",
+    "evidence": [
+      "Slither timestamp (21 señales)",
+      "Revisión manual"
+    ]
+  },
+  {
+    "id": "I-02",
+    "severity": "Informational",
+    "title": "Las recompensas asignadas no están reservadas y dependen de liquidez/roles en el momento del claim",
+    "contracts": [
+      "Todos los módulos de recompensas",
+      "IncentivesPool.sol"
+    ],
+    "lines": [
+      "Llamadas a IncentivesPool.distribute()"
+    ],
+    "description": "Los módulos registran elegibilidad pero no reservan fondos. Cualquier distribuidor puede consumir el pool antes de que otro usuario reclame. En la mayoría de módulos el claim puede reintentarse porque el estado revierte; en staking la consecuencia escala a H-02.",
+    "impact": "Riesgo de liveness, carreras económicas y obligaciones sin respaldo.",
+    "scenario": "Un ganador registrado intenta reclamar después de que otros módulos agotan el pool y la transacción revierte.",
+    "recommendation": "Implementar presupuestos por módulo/ciclo, reservas contables respaldadas por balance real y monitoreo de obligaciones frente a liquidez.",
+    "evidence": [
+      "Revisión de arquitectura"
+    ]
+  },
+  {
+    "id": "I-03",
+    "severity": "Informational",
+    "title": "Faltan bloqueo de dependencias, pruebas originales, scripts de despliegue y configuración de roles",
+    "contracts": [
+      "Repositorio completo"
+    ],
+    "lines": [
+      "README.md y estructura del repositorio"
+    ],
+    "description": "El repositorio no fija versión de OpenZeppelin, no incluye `foundry.toml`/Hardhat, pruebas, scripts de despliegue ni automatización de grants/revokes. La auditoría asumió OpenZeppelin 5.0.2 porque coincide con imports y APIs.",
+    "impact": "Compilaciones futuras pueden cambiar, un despliegue puede omitir roles críticos y no existe evidencia reproducible previa a esta auditoría.",
+    "scenario": "MembershipSystem no recibe `DEPOSITOR_ROLE` o un módulo no recibe `DISTRIBUTOR_ROLE`, dejando flujos inoperables.",
+    "recommendation": "Versionar dependencias, incorporar el entorno entregado, scripts idempotentes de despliegue/configuración y CI que compile, pruebe, ejecute Slither y verifique matriz de roles.",
+    "evidence": [
+      "Compilación y revisión de repositorio"
+    ]
+  },
+  {
+    "id": "I-04",
+    "severity": "Informational",
+    "title": "Problemas de calidad y observabilidad reducen mantenibilidad",
+    "contracts": [
+      "ReputationBunises.sol",
+      "MembershipSystem.sol",
+      "PenaltySystem.sol",
+      "varios"
+    ],
+    "lines": [
+      "ReputationBunises.sol (nombre de archivo)",
+      "MembershipSystem.sol:69-72",
+      "PenaltySystem.sol:96"
+    ],
+    "description": "El archivo `ReputationBunises.sol` está mal escrito; `pendingRewards` se incrementa pero nunca se consume; existen errores/eventos no usados (`PenaltyPaid`, `ProfileAlreadyBlocked`, etc.); setters críticos no emiten eventos; y varios comentarios no coinciden con la lógica.",
+    "impact": "Aumenta el riesgo de integración, monitoreo incorrecto y futuras modificaciones defectuosas.",
+    "scenario": "Herramientas y scripts esperan `ReputationBonuses.sol`, o dashboards interpretan `pendingRewards` como deuda pendiente aunque ya fue pagada.",
+    "recommendation": "Corregir nombres, eliminar estado muerto, emitir eventos de configuración y alinear NatSpec con reglas verificables.",
+    "evidence": [
+      "Slither dead-code y revisión manual"
+    ]
+  },
+  {
+    "id": "I-05",
+    "severity": "Informational",
+    "title": "Mappings públicos y getters explícitos duplican la superficie ABI",
+    "contracts": [
+      "EducatorBonuses.sol",
+      "EventRewards.sol",
+      "PenaltySystem.sol",
+      "RecruiterBonuses.sol",
+      "ReferralSystem.sol",
+      "StakingContract.sol",
+      "TalentBonuses.sol"
+    ],
+    "lines": [
+      "EducatorBonuses.sol:43-66",
+      "EventRewards.sol:64-73",
+      "PenaltySystem.sol:71-77",
+      "RecruiterBonuses.sol:58-71",
+      "ReferralSystem.sol:46-52",
+      "StakingContract.sol:53-59",
+      "TalentBonuses.sol:43-55"
+    ],
+    "description": "Se identificaron al menos 16 accesos escalares donde un mapping `public` genera un getter automático y existe además una función que devuelve exactamente el mismo valor.",
+    "impact": "No es una explotación directa, pero aumenta bytecode, entradas ABI, costo de mantenimiento y acoplamiento del almacenamiento con frontend/indexadores.",
+    "scenario": "Un integrador encuentra tanto `totalStakedByUser(address)` como `getTotalStaked(address)` y debe mantener ambas rutas aunque sean equivalentes.",
+    "recommendation": "Conservar una sola ruta. Para datos simples estables, mapping público sin wrapper; para abstracción, mapping privado y getter explícito. Coordinar cualquier cambio de ABI.",
+    "evidence": [
+      "Revisión manual de mappings y getters",
+      "16 pares escalares duplicados confirmados"
+    ]
+  },
+  {
+    "id": "I-06",
+    "severity": "Informational",
+    "title": "NatSpec incompleto y parcialmente desalineado con la lógica",
+    "contracts": [
+      "Todos los contratos e interfaces"
+    ],
+    "lines": [
+      "HackTokenERC20.sol:17-104",
+      "StakingContract.sol:181",
+      "Interfaces internas sin NatSpec completo"
+    ],
+    "description": "La mayoría de funciones tiene comentarios, pero faltan tags `@param`/`@return`, documentación de errores y trust assumptions; algunos comentarios describen historial de cambios o requisitos distintos al comportamiento real.",
+    "impact": "Aumenta el riesgo de integración incorrecta, revisión defectuosa y decisiones de usuario basadas en documentación inexacta.",
+    "scenario": "El NatSpec afirma que la exención exige haber estado en staking 12 meses, mientras el código solo comprueba que la posición eligió duración de un año.",
+    "recommendation": "Documentar toda la ABI con notice/dev/param/return, unidades, roles, pausas, invariantes, eventos y errores. Generar userdoc/devdoc en CI y fallar ante cobertura o comentarios obsoletos.",
+    "evidence": [
+      "Revisión heurística NatSpec",
+      "Solidity NatSpec: toda interfaz pública debe estar anotada"
+    ]
+  },
+  {
+    "id": "I-07",
+    "severity": "Informational",
+    "title": "Modernización condicional a ReentrancyGuardTransient",
+    "contracts": [
+      "EducatorBonuses.sol",
+      "EventRewards.sol",
+      "MembershipSystem.sol",
+      "PenaltySystem.sol",
+      "RecruiterBonuses.sol",
+      "ReferralSystem.sol",
+      "ReputationBunises.sol",
+      "StakingContract.sol",
+      "TalentBonuses.sol"
+    ],
+    "lines": [
+      "Imports/herencia de ReentrancyGuard en nueve contratos"
+    ],
+    "description": "El commit usa OpenZeppelin 5.0.2 con ReentrancyGuard. OpenZeppelin 5.x ofrece ReentrancyGuardTransient para redes EIP-1153. Se compiló una variante aislada con OZ 5.6.1, solc 0.8.24 y evmVersion Cancun.",
+    "impact": "No corrige una vulnerabilidad demostrada; es una mejora de compatibilidad futura y potencial gas. Desplegarla en una red sin EIP-1153 haría el bytecode incompatible.",
+    "scenario": "Una build transient se despliega por error en una cadena que no implementa TLOAD/TSTORE y las llamadas protegidas fallan.",
+    "recommendation": "Migrar solo tras confirmar red, hard fork y toolchain; fijar versión, usar perfil Cancun, ejecutar suite completa y fork/testnet. Mantener perfiles separados para multichain.",
+    "evidence": [
+      "evidence/modernization/oz-5.6.1-reentrancyguardtransient-compile.txt",
+      "OpenZeppelin 5.x Utilities",
+      "Polygon PIP-31"
+    ]
+  }
+]
