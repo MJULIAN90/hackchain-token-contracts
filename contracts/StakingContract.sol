@@ -139,10 +139,9 @@ contract StakingContract is AccessControl, ReentrancyGuard {
      * @param stakeIndex_ Index of the stake in the user's stakes array.
      */
     function unstake(uint256 stakeIndex_) external nonReentrant {
-        Stake storage userStake = userStakes[msg.sender][stakeIndex_];
-
         // Validate stake exists and is active
         if (stakeIndex_ >= userStakes[msg.sender].length) revert StakeNotFound();
+        Stake storage userStake = userStakes[msg.sender][stakeIndex_];
         if (!userStake.active) revert StakeAlreadyInactive();
 
         // Check staking period is over

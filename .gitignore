@@ -1,0 +1,6 @@
+/cache/
+/.env
+/out/
+/broadcast/
+*.swp
+.DS_Store
