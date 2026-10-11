@@ -37,4 +37,19 @@ contract PresaleOps is Script {
         PresaleAllocation(presale_).withdrawUnallocated(recipient_);
         vm.stopBroadcast();
     }
+
+    /// @notice Records the hash of the signed delivery list. Run this in the same session as the
+    /// final allocateBatch, before finalize().
+    function setAllocationListHash(address presale_, bytes32 listHash_) external {
+        vm.startBroadcast();
+        PresaleAllocation(presale_).setAllocationListHash(listHash_);
+        vm.stopBroadcast();
+    }
+
+    /// @notice After the +180 day claim deadline, sends whatever is left to the treasury.
+    function sweepUnclaimed(address presale_, address recipient_) external {
+        vm.startBroadcast();
+        PresaleAllocation(presale_).sweepUnclaimed(recipient_);
+        vm.stopBroadcast();
+    }
 }

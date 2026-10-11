@@ -56,7 +56,10 @@ contract DeployCore is Script {
         TalentBonuses talentBonuses = new TalentBonuses(address(token), address(incentivesPool));
         CommissionSystem commission = new CommissionSystem(address(token), treasury);
         ReputationBonuses reputation = new ReputationBonuses(address(incentivesPool));
-        PresaleAllocation presale = new PresaleAllocation(address(token), presaleCap);
+        // presaleAdmin (the presale multisig) receives every administrative role on the presale
+        // contract directly from its constructor now — the broadcaster never holds them, so there
+        // is nothing to revoke afterwards and no window where the deployer is a de facto co-admin.
+        PresaleAllocation presale = new PresaleAllocation(address(token), presaleCap, presaleAdmin);
 
         _configureToken(token, protocolAdmin);
         _configurePool(
@@ -99,8 +102,9 @@ contract DeployCore is Script {
             incentivesPool.fundPool(rewardPoolFunding);
         }
 
-        presale.grantRole(presale.ADMIN_ROLE(), presaleAdmin);
-        presale.grantRole(presale.DEFAULT_ADMIN_ROLE(), presaleAdmin);
+        // No post-hoc presale.grantRole(...) here anymore: presaleAdmin already holds every role
+        // from the constructor call above, and the broadcaster now has none to grant from even if
+        // this were re-added by mistake.
 
         vm.stopBroadcast();
 

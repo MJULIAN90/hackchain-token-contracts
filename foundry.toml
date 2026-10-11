@@ -5,6 +5,10 @@ libs = ["lib"]
 test = "test"
 script = "script"
 solc_version = "0.8.24"
+# Fijada a proposito: sin esto el compilador usa la ultima version que soporta solc,
+# y el bytecode deja de ser reproducible para el auditor y para la verificacion
+# del codigo fuente en el explorador de bloques.
+evm_version = "paris"
 optimizer = true
 optimizer_runs = 200
 via_ir = true
